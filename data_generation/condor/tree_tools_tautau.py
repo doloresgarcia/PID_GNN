@@ -12,6 +12,25 @@ Bz_clic = 4.0
 Bz_cld = 2.0
 mchp = 0.139570
 
+def get_momentum_main(daughters, gen_part_coll, decay_type):
+    pdgs = []
+    p_t =0
+    for daugther in daughters:
+        pdgs = gen_part_coll[daugther].getPDG()
+        momentum = gen_part_coll[daugther].getMomentum()
+        p = math.sqrt(momentum.x**2 + momentum.y**2)
+        if decay_type ==0 and np.abs(pdgs) == 11:
+            p_t = p
+        elif decay_type ==1 and np.abs(pdgs) == 13:
+            p_t = p
+        elif  decay_type ==5 and np.abs(pdgs) == 213:
+            p_t = p
+        elif decay_type ==3 and np.abs(pdgs) == 211:
+            p_t = p
+    
+    return p_t 
+        
+
 
 def get_decay_type(daughters, gen_part_coll):
     # tau to e= ve vtau (rho --> e+ ve)
@@ -35,6 +54,7 @@ def get_decay_type(daughters, gen_part_coll):
         [16, 111, 211],
         [16, 211],
         [16, 111, 111, 211],
+        [16,213]
     ]
     decay_check = [
         (set(np.abs(pdgs)) == set(decay)) * (len(pdgs) == len(decay))
@@ -207,6 +227,7 @@ def find_mother_particle(j, gen_part_coll, index_tau):
     parent_p = j
     counter = 0
     belongs_to_tau = False
+    pp_old_list =[]
     while len(np.reshape(np.array(parent_p), -1)) < 1.5:
         if type(parent_p) == list:
             if len(parent_p) > 0:
@@ -223,6 +244,7 @@ def find_mother_particle(j, gen_part_coll, index_tau):
         if parent_p_r[0] == index_tau:
             belongs_to_tau = True
         pp_old = parent_p
+        pp_old_list.append(pp_old)
         counter = counter + 1
         # if len(np.reshape(np.array(parent_p_r), -1)) < 1.5:
         #     print(parent_p, parent_p_r)
@@ -231,7 +253,7 @@ def find_mother_particle(j, gen_part_coll, index_tau):
             break
     # if j != pp_old:
     #     print("old parent and new parent", j, pp_old)
-    return pp_old, belongs_to_tau
+    return pp_old_list[-1], belongs_to_tau
 
 
 def find_gen_link(
@@ -267,7 +289,7 @@ def find_gen_link(
     indices += [-1] * (5 - len(indices))
     gen_weights += [-1] * (5 - len(gen_weights))
     # print(gen_positions, indices)
-    return indices, gen_weights, belongs_to_tau
+    return gen_positions, gen_weights, belongs_to_tau
 
 
 def initialize(t):
@@ -321,6 +343,7 @@ def initialize(t):
     part_pid = ROOT.std.vector("float")()
     part_isDecayedInCalorimeter = ROOT.std.vector("float")()
     part_isDecayedInTracker = ROOT.std.vector("float")()
+    mom_main_daughter = ROOT.std.vector("float")()
 
     t.Branch("event_number", event_number, "event_number/I")
     t.Branch("n_hit", n_hit, "n_hit/I")
@@ -367,7 +390,7 @@ def initialize(t):
     t.Branch("part_pid", part_pid)
     t.Branch("part_isDecayedInCalorimeter", part_isDecayedInCalorimeter)
     t.Branch("part_isDecayedInTracker", part_isDecayedInTracker)
-
+    t.Branch("mom_main_daughter", mom_main_daughter)
     dic = {
         "label_true": label_true,
         "tau_label": tau_label,
@@ -388,7 +411,7 @@ def initialize(t):
         "hit_genlink0": hit_genlink0,
         "hit_genlink1": hit_genlink1,
         "hit_genlink2": hit_genlink2,
-        "hit_genlink3": hit_genlink3,
+        "hit_genlink3": hit_genlink3, #daugthers are stored here
         "hit_genlink4": hit_genlink4,
         "hit_genlink": hit_genlink,
         "hit_genweight0": hit_genweight0,
@@ -406,6 +429,7 @@ def initialize(t):
         "part_pid": part_pid,
         "part_isDecayedInCalorimeter": part_isDecayedInCalorimeter,
         "part_isDecayedInTracker": part_isDecayedInTracker,
+        "mom_main_daughter":mom_main_daughter
     }
     return (event_number, n_hit, n_part, dic, t)
 
@@ -449,10 +473,12 @@ def gen_particles_find(event, debug):
                 index_of_Z = j
                 index_of_tau1 = daughters[0]
                 index_of_tau2 = daughters[1]
+        print(part.getPDG(), index_of_tau1, index_of_tau1)
         if index_of_Z > 0:
             if j == index_of_tau1:
                 # find decay of tau 1
                 if (np.abs(part.getPDG()) == 15) and (part.getGeneratorStatus() != 2):
+                    # this is in case the 15 decays before decaying into the products we are looking for 
                     daughters = get_genparticle_daughters(
                         j,
                         gen_part_coll,
@@ -527,9 +553,10 @@ def gen_particles_find(event, debug):
 
 
 def store_gen_particles(
-    n_part_pre, gen_part_coll, indexes_genpart_pre, dic, n_part, debug, j_tau
+    n_part_pre, gen_part_coll, indexes_genpart_pre, dic, n_part, debug, j_tau, decay_types
 ):
-
+    [decay_type1, decay_type2]= decay_types
+    [index_of_tau1, index_of_tau2] = j_tau
     genpart_indexes = (
         dict()
     )  ## key: index in gen particle collection, value: position in stored gen particle array
@@ -559,7 +586,22 @@ def store_gen_particles(
             part.isDecayedInCalorimeter() * 1.0
         )
         dic["part_isDecayedInTracker"].push_back(part.isDecayedInTracker() * 1)
-
+        if j == index_of_tau1:
+            daughters = get_genparticle_daughters(
+                        j,
+                        gen_part_coll,
+                    )
+            momentum_main = get_momentum_main(daughters, gen_part_coll, decay_type1)
+            dic["mom_main_daughter"].push_back(momentum_main)
+        elif j == index_of_tau2:
+            daughters = get_genparticle_daughters(
+                j,
+                gen_part_coll,
+            )
+            momentum_main = get_momentum_main(daughters, gen_part_coll, decay_type2)
+            dic["mom_main_daughter"].push_back(momentum_main)
+        else:
+            dic["mom_main_daughter"].push_back(0)
         genpart_indexes[indexes_genpart_pre[j]] = n_part[0]
         indexes_genpart[n_part[0]] = indexes_genpart_pre[j]
         n_part[0] += 1
@@ -622,6 +664,7 @@ def store_tracks(
             gen_part_coll=gen_part_coll,
             index_tau=index_tau[0],
         )
+        # print("gen_indices", gen_indices, belongs_to_tau1)
         gen_indices, gen_weights, belongs_to_tau2 = find_gen_link(
             j,
             track.getObjectID().collectionID,
@@ -653,7 +696,6 @@ def store_tracks(
         r = math.sqrt(x**2 + y**2 + z**2)
 
         chi_s = track.getChi2()
-
         dic["hit_chis"].push_back(chi_s)
         dic["hit_x"].push_back(x)
         dic["hit_y"].push_back(y)
@@ -875,6 +917,7 @@ def store_calo_hits(
             ecal_endcap[0],
             hcal_endcap[0],
             hcal_other[0],
+            "MUON"
         ]
 
     total_calohit_e = 0
@@ -948,6 +991,8 @@ def store_calo_hits(
             htype = 2  # 2 if ECAL, 3 if HCAL
             if "HCAL" in calohit_coll:
                 htype = 3
+            elif  "MUON" in calohit_coll:
+                htype = 4
 
             dic["hit_type"].push_back(htype)  # 0 for calo hits
             dic["calohit_col"].push_back(calohit_col_index + 1)

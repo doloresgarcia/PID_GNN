@@ -53,81 +53,82 @@ event_number, n_hit, n_part, dic, t = initialize(t)
 
 event_number[0] = 0
 for i, event in enumerate(reader.get("events")):
-    number_of_hist_with_no_genlinks = 0
-    (
-        genpart_indexes_pre,
-        indexes_genpart_pre,
-        n_part_pre,
-        gen_part_coll,
-        index_Z,
-        decay_type1,
-        decay_type2,
-    ) = gen_particles_find(event, debug)
-    # clear all the vectors
-    # either go twice through the event or store two different events for each...
-    # for j_tau in range(0, 2):
-    print(index_Z, decay_type1, decay_type2)
-    index_taus = index_Z
-    decay_types = [decay_type1, decay_type2]
+        number_of_hist_with_no_genlinks = 0
+        (
+            genpart_indexes_pre,
+            indexes_genpart_pre,
+            n_part_pre,
+            gen_part_coll,
+            index_Z,
+            decay_type1,
+            decay_type2,
+        ) = gen_particles_find(event, debug)
+        # clear all the vectors
+        # either go twice through the event or store two different events for each...
+        # for j_tau in range(0, 2):
+        print(index_Z, decay_type1, decay_type2)
+        index_taus = index_Z
+        decay_types = [decay_type1, decay_type2]
 
-    dic = clear_dic(dic)
-    n_part[0] = 0
+        dic = clear_dic(dic)
+        n_part[0] = 0
 
-    dic, genpart_indexes = store_gen_particles(
-        n_part_pre,
-        gen_part_coll,
-        indexes_genpart_pre,
-        dic,
-        n_part,
-        debug,
-        index_taus,
-    )
-
-    n_hit[0] = 0
-
-    n_hit, dic, number_of_hist_with_no_genlinks = store_tracks(
-        event,
-        debug,
-        dic,
-        genpart_indexes,
-        gen_part_coll,
-        n_hit,
-        number_of_hist_with_no_genlinks,
-        store_pandora_hits,
-        CLIC,
-        indx_data,
-        index_tau=index_taus,
-        decay_types=decay_types,
-    )
-
-    (
-        n_hit,
-        dic,
-        total_calohit_,
-        number_of_hist_with_no_genlinks,
-        total_calohit_pandora,
-    ) = store_calo_hits(
-        event,
-        debug,
-        dic,
-        n_hit,
-        genpart_indexes,
-        gen_part_coll,
-        number_of_hist_with_no_genlinks,
-        store_pandora_hits,
-        CLIC,
-        indx_data,
-        index_tau=index_taus,
-        decay_types=decay_types,
-    )
-
-    if n_hit[0] <= number_of_hist_with_no_genlinks:
-        print(
-            "  --> WARNING: all hists in this event have no gen link associated or simply no hits, skipping event"
+        dic, genpart_indexes = store_gen_particles(
+            n_part_pre,
+            gen_part_coll,
+            indexes_genpart_pre,
+            dic,
+            n_part,
+            debug,
+            index_taus,
+            decay_types
         )
-    else:
-        event_number[0] += 1
-        t.Fill()
+
+        n_hit[0] = 0
+
+        n_hit, dic, number_of_hist_with_no_genlinks = store_tracks(
+            event,
+            debug,
+            dic,
+            genpart_indexes,
+            gen_part_coll,
+            n_hit,
+            number_of_hist_with_no_genlinks,
+            store_pandora_hits,
+            CLIC,
+            indx_data,
+            index_tau=index_taus,
+            decay_types=decay_types,
+        )
+
+        (
+            n_hit,
+            dic,
+            total_calohit_,
+            number_of_hist_with_no_genlinks,
+            total_calohit_pandora,
+        ) = store_calo_hits(
+            event,
+            debug,
+            dic,
+            n_hit,
+            genpart_indexes,
+            gen_part_coll,
+            number_of_hist_with_no_genlinks,
+            store_pandora_hits,
+            CLIC,
+            indx_data,
+            index_tau=index_taus,
+            decay_types=decay_types,
+        )
+
+        if n_hit[0] <= number_of_hist_with_no_genlinks:
+            print(
+                "  --> WARNING: all hists in this event have no gen link associated or simply no hits, skipping event"
+            )
+        else:
+            event_number[0] += 1
+            t.Fill()
 
 t.SetDirectory(out_root)
 t.Write()
