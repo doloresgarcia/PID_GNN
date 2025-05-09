@@ -291,8 +291,8 @@ parser.add_argument(
 )
 parser.add_argument(
     "--export-onnx",
-    type=str,
-    default=None,
+    action="store_true",
+    default=False,
     help="export the PyTorch model to ONNX model and save it at the given path (path must ends w/ .onnx); "
     "needs to set `--data-config`, `--network-config`, and `--model-prefix` (requires the full model path)",
 )

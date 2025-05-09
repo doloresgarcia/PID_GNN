@@ -1,33 +1,33 @@
 import numpy as np
 import torch
 import dgl
-from torch_scatter import scatter_add, scatter_sum
+# from torch_scatter import scatter_add, scatter_sum
 from sklearn.preprocessing import StandardScaler
-from torch_scatter import scatter_sum
+# from torch_scatter import scatter_sum
 
 
-def get_ratios(e_hits, part_idx, y):
-    """Obtain the percentage of energy of the particle present in the hits
+# def get_ratios(e_hits, part_idx, y):
+#     """Obtain the percentage of energy of the particle present in the hits
 
-    Args:
-        e_hits (_type_): _description_
-        part_idx (_type_): _description_
-        y (_type_): _description_
+#     Args:
+#         e_hits (_type_): _description_
+#         part_idx (_type_): _description_
+#         y (_type_): _description_
 
-    Returns:
-        _type_: _description_
-    """
-    energy_from_showers = scatter_sum(e_hits, part_idx.long(), dim=0)
-    # y_energy = y[:, 3]
-    y_energy = y.E
-    energy_from_showers = energy_from_showers[1:]
-    assert len(energy_from_showers) > 0
-    return (energy_from_showers.flatten() / y_energy).tolist()
+#     Returns:
+#         _type_: _description_
+#     """
+#     energy_from_showers = scatter_sum(e_hits, part_idx.long(), dim=0)
+#     # y_energy = y[:, 3]
+#     y_energy = y.E
+#     energy_from_showers = energy_from_showers[1:]
+#     assert len(energy_from_showers) > 0
+#     return (energy_from_showers.flatten() / y_energy).tolist()
 
 
-def get_number_hits(e_hits, part_idx):
-    number_of_hits = scatter_sum(torch.ones_like(e_hits), part_idx.long(), dim=0)
-    return (number_of_hits[1:].flatten()).tolist()
+# def get_number_hits(e_hits, part_idx):
+#     number_of_hits = scatter_sum(torch.ones_like(e_hits), part_idx.long(), dim=0)
+#     return (number_of_hits[1:].flatten()).tolist()
 
 
 def get_number_of_daughters(hit_type_feature, hit_particle_link, daughters):
@@ -41,81 +41,81 @@ def get_number_of_daughters(hit_type_feature, hit_particle_link, daughters):
     return number_of_p
 
 
-def find_mask_no_energy(
-    hit_particle_link, hit_type_a, hit_energies, y, daughters, predict=False
-):
-    """This function remove particles with tracks only and remove particles with low fractions
-    # Remove 2212 going to multiple particles without tracks for now
-    # remove particles below energy cut
-    # remove particles that decayed in the tracker
-    # remove particles with two tracks (due to bad tracking)
-    # remove particles with daughters for the moment
+# def find_mask_no_energy(
+#     hit_particle_link, hit_type_a, hit_energies, y, daughters, predict=False
+# ):
+#     """This function remove particles with tracks only and remove particles with low fractions
+#     # Remove 2212 going to multiple particles without tracks for now
+#     # remove particles below energy cut
+#     # remove particles that decayed in the tracker
+#     # remove particles with two tracks (due to bad tracking)
+#     # remove particles with daughters for the moment
 
-    Args:
-        hit_particle_link (_type_): _description_
-        hit_type_a (_type_): _description_
-        hit_energies (_type_): _description_
-        y (_type_): _description_
+#     Args:
+#         hit_particle_link (_type_): _description_
+#         hit_type_a (_type_): _description_
+#         hit_energies (_type_): _description_
+#         y (_type_): _description_
 
-    Returns:
-        _type_: _description_
-    """
+#     Returns:
+#         _type_: _description_
+#     """
 
-    number_of_daughters = get_number_of_daughters(
-        hit_type_a, hit_particle_link, daughters
-    )
-    list_p = np.unique(hit_particle_link)
-    list_remove = []
-    part_frac = torch.tensor(get_ratios(hit_energies, hit_particle_link, y))
-    number_of_hits = get_number_hits(hit_energies, hit_particle_link)
-    if predict:
-        energy_cut = 0.1
-        filt1 = (torch.where(part_frac >= energy_cut)[0] + 1).long().tolist()
-    else:
-        energy_cut = 0.01
-        filt1 = (torch.where(part_frac >= energy_cut)[0] + 1).long().tolist()
-    number_of_tracks = scatter_add(1 * (hit_type_a == 1), hit_particle_link.long())[1:]
-    for index, p in enumerate(list_p):
-        mask = hit_particle_link == p
-        hit_types = np.unique(hit_type_a[mask])
+#     number_of_daughters = get_number_of_daughters(
+#         hit_type_a, hit_particle_link, daughters
+#     )
+#     list_p = np.unique(hit_particle_link)
+#     list_remove = []
+#     part_frac = torch.tensor(get_ratios(hit_energies, hit_particle_link, y))
+#     number_of_hits = get_number_hits(hit_energies, hit_particle_link)
+#     if predict:
+#         energy_cut = 0.1
+#         filt1 = (torch.where(part_frac >= energy_cut)[0] + 1).long().tolist()
+#     else:
+#         energy_cut = 0.01
+#         filt1 = (torch.where(part_frac >= energy_cut)[0] + 1).long().tolist()
+#     number_of_tracks = scatter_add(1 * (hit_type_a == 1), hit_particle_link.long())[1:]
+#     for index, p in enumerate(list_p):
+#         mask = hit_particle_link == p
+#         hit_types = np.unique(hit_type_a[mask])
 
-        if predict:
-            if (
-                np.array_equal(hit_types, [0, 1])
-                or int(p) not in filt1
-                or (number_of_hits[index] < 2)
-                or (y.decayed_in_tracker[index] == 1)
-                or number_of_tracks[index] == 2
-                or number_of_daughters[index] > 1
-            ):
-                list_remove.append(p)
-        else:
-            if (
-                np.array_equal(hit_types, [0, 1])
-                or int(p) not in filt1
-                or (number_of_hits[index] < 2)
-                or number_of_tracks[index] == 2
-                or number_of_daughters[index] > 1
-            ):
-                list_remove.append(p)
-    if len(list_remove) > 0:
-        mask = torch.tensor(np.full((len(hit_particle_link)), False, dtype=bool))
-        for p in list_remove:
-            mask1 = hit_particle_link == p
-            mask = mask1 + mask
+#         if predict:
+#             if (
+#                 np.array_equal(hit_types, [0, 1])
+#                 or int(p) not in filt1
+#                 or (number_of_hits[index] < 2)
+#                 or (y.decayed_in_tracker[index] == 1)
+#                 or number_of_tracks[index] == 2
+#                 or number_of_daughters[index] > 1
+#             ):
+#                 list_remove.append(p)
+#         else:
+#             if (
+#                 np.array_equal(hit_types, [0, 1])
+#                 or int(p) not in filt1
+#                 or (number_of_hits[index] < 2)
+#                 or number_of_tracks[index] == 2
+#                 or number_of_daughters[index] > 1
+#             ):
+#                 list_remove.append(p)
+#     if len(list_remove) > 0:
+#         mask = torch.tensor(np.full((len(hit_particle_link)), False, dtype=bool))
+#         for p in list_remove:
+#             mask1 = hit_particle_link == p
+#             mask = mask1 + mask
 
-    else:
-        mask = np.full((len(hit_particle_link)), False, dtype=bool)
+#     else:
+#         mask = np.full((len(hit_particle_link)), False, dtype=bool)
 
-    if len(list_remove) > 0:
-        mask_particles = np.full((len(list_p)), False, dtype=bool)
-        for p in list_remove:
-            mask_particles1 = list_p == p
-            mask_particles = mask_particles1 + mask_particles
+#     if len(list_remove) > 0:
+#         mask_particles = np.full((len(list_p)), False, dtype=bool)
+#         for p in list_remove:
+#             mask_particles1 = list_p == p
+#             mask_particles = mask_particles1 + mask_particles
 
-    else:
-        mask_particles = np.full((len(list_p)), False, dtype=bool)
-    return mask, mask_particles
+#     else:
+#         mask_particles = np.full((len(list_p)), False, dtype=bool)
+#     return mask, mask_particles
 
 
 class CachedIndexList:
@@ -159,7 +159,7 @@ def scatter_count(input: torch.Tensor):
 
 
 def get_particle_features(
-    unique_list_particles, output, prediction, connection_list, tau_sample=False
+    unique_list_particles, output, prediction, connection_list, tau_sample=False, load_p =False
 ):
     unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
     if prediction:
@@ -168,7 +168,6 @@ def get_particle_features(
     else:
         number_particle_features = 9 - 2
         number_p = 5
-    # unique_list_particles = torch.Tensor(unique_list_particles)
     if tau_sample:
         if len(unique_list_particles) > 1:
             features_particles = torch.permute(
@@ -187,6 +186,12 @@ def get_particle_features(
         features_particles = torch.tensor(
             output["pf_features"][2:number_particle_features, 2]
         ).view(-1, 5)
+    if load_p:
+        y_mom_main_daugther  = torch.tensor(
+            output["pf_vectors"][-1, unique_list_particles]
+        ).view(-1).unsqueeze(1)
+    else:
+        y_mom_main_daugther = None
 
     # print("features_particles", features_particles.shape)
     particle_coord = spherical_to_cartesian(
@@ -219,6 +224,7 @@ def get_particle_features(
             y_mass,
             y_pid,
             unique_list_particles=unique_list_particles,
+            y_mom_main_daugther = y_mom_main_daugther
         )
 
     return y_data_graph
@@ -421,6 +427,7 @@ class Particles_GT:
         batch_number=None,
         unique_list_particles=None,
         energy_corrected=None,
+        y_mom_main_daugther = None
     ):
         self.coord = coordinates
         self.E = energy
@@ -433,6 +440,8 @@ class Particles_GT:
         self.m = momentum
         self.mass = mass
         self.pid = pid
+        if y_mom_main_daugther is not None:
+            self.mom_main_daugther = y_mom_main_daugther
         if unique_list_particles is not None:
             self.unique_list_particles = unique_list_particles
         if decayed_in_calo is not None:
@@ -501,6 +510,11 @@ def concatenate_Particles_GT(list_of_Particles_GT):
     else:
         list_dec_calo = None
         list_dec_track = None
+    if "mom_main_daugther" in dir(list_of_Particles_GT[0][1]):
+        y_mom_main_daugther = [p[1].mom_main_daugther for p in list_of_Particles_GT]
+        y_mom_main_daugther = torch.cat(y_mom_main_daugther, dim=0)
+    else:
+        y_mom_main_daugther = None
     batch_number = add_batch_number(list_of_Particles_GT)
     return Particles_GT(
         list_coord,
@@ -512,6 +526,7 @@ def concatenate_Particles_GT(list_of_Particles_GT):
         list_dec_track,
         batch_number,
         energy_corrected=list_E_corr,
+        y_mom_main_daugther = y_mom_main_daugther
     )
 
 

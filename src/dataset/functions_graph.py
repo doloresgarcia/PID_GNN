@@ -1,12 +1,12 @@
 import numpy as np
 import torch
 import dgl
-from torch_scatter import scatter_add, scatter_sum
+# from torch_scatter import scatter_add, scatter_sum
 from sklearn.preprocessing import StandardScaler
-from torch_scatter import scatter_sum
+# from torch_scatter import scatter_sum
 from src.dataset.functions_data import (
-    get_ratios,
-    find_mask_no_energy,
+    # get_ratios,
+    # find_mask_no_energy,
     find_cluster_id,
     get_particle_features,
     get_hit_features,
@@ -16,7 +16,7 @@ from src.dataset.functions_data import (
 
 
 def create_inputs_from_table(
-    output, hits_only, prediction=False, hit_chis=False, tau_sample=False
+    output, hits_only, prediction=False, hit_chis=False, tau_sample=False, load_p= False
 ):
     """Used by graph creation to get nodes and edge features
 
@@ -66,6 +66,7 @@ def create_inputs_from_table(
         prediction,
         connection_list,
         tau_sample=tau_sample,
+        load_p = load_p
     )
 
     # assert len(y_data_graph) == len(unique_list_particles)
@@ -104,7 +105,7 @@ def create_inputs_from_table(
         if result[i] is not None:
             result[i] = result[i][hit_mask]
     hit_type_one_hot = torch.nn.functional.one_hot(
-        hit_type_feature[hit_mask] - 1, num_classes=3
+        hit_type_feature[hit_mask] - 1, num_classes=4
     )
 
     result.append(hit_type_one_hot)
@@ -125,6 +126,8 @@ def create_graph(
     prediction = config.graph_config.get("prediction", False)
     hit_chis = config.graph_config.get("hit_chis_track", False)
     tau_sample = config.graph_config.get("tau_sample", False)
+    load_p = config.graph_config.get("load_p", False)
+
     (
         y_data_graph,
         p_hits,
@@ -151,6 +154,7 @@ def create_graph(
         prediction=prediction,
         hit_chis=hit_chis,
         tau_sample=tau_sample,
+        load_p = load_p
     )
     # print("pandora_pfo_link", pandora_pfo_link[hit_type == 1])
     graph_coordinates = pos_xyz_hits  # / 3330  # divide by detector size
@@ -160,7 +164,7 @@ def create_graph(
         g.add_nodes(graph_coordinates.shape[0])
 
         hit_features_graph = torch.cat(
-            (graph_coordinates, hit_type_one_hot, e_hits, p_hits), dim=1
+            (graph_coordinates, hit_type_one_hot, e_hits, p_hits, torch.log(e_hits+p_hits)), dim=1
         )
 
         if tau_sample:
@@ -173,6 +177,7 @@ def create_graph(
             g.ndata["hit_type"] = hit_type[sorted_index]
             g.ndata["daughters"] = daughters[sorted_index]
             g.ndata["e_hits"] = e_hits[sorted_index]
+            g.ndata["e_hits_log"] = torch.log(e_hits[sorted_index])
             g.ndata["p_hits"] = p_hits[sorted_index]  #
 
             g.ndata["particle_number"] = cluster_id[sorted_index]
@@ -213,15 +218,24 @@ def create_graph(
             g = dgl.remove_nodes(g, torch.where(g.ndata["tau_label"] == -1)[0])
     #
     # check decay types:
+    print("torch sum tau label -1", torch.sum(g.ndata["tau_label"] == -1))
     if tau_sample and not graph_empty:
-        index_labels = torch.Tensor([10, 10, 0, 1, 10, 10, 10, 10, 10, 10, 10, 10]).to(
+        index_labels = torch.Tensor([0,1,2,3,10, 2, 10, 10, 10, 10, 10, 10]).to(
             labels_true.device
         )
+
+        # index_labels = torch.Tensor([10,10,10,1,10, 0, 10, 10, 10, 10, 10, 10]).to(
+        #     labels_true.device
+        # )
         labels_true = g.ndata["label_true"]
         g.ndata["label_true"] = index_labels[labels_true.long()]
     if tau_sample:
         decay_types = torch.unique(g.ndata["label_true"])
-        # print("decay types", decay_types)
+        # decay types:
+        # 0 (e)
+        # 1 (mu)
+        # 2 (rho)
+        # 3 (phi)
         if torch.sum(decay_types == 10) == 2:
             graph_empty = True
         elif (torch.sum(decay_types == 10) == 1) and (torch.sum(decay_types == 4) == 1):
@@ -232,13 +246,24 @@ def create_graph(
             g = dgl.remove_nodes(g, torch.where(g.ndata["label_true"] == 4)[0])
         elif torch.sum(decay_types == 4) == 2:
             graph_empty = True
-    # g = dgl.remove_nodes(g, torch.where(g.ndata["tau_label"] == 11)[0])
+    #g = dgl.remove_nodes(g, torch.where(g.ndata["tau_label"] == 11)[0])
     # print('found one 10 decay')
     # else the two tau decays are part of the decays we know and love
 
+    # leave only one tau for the onnx export test 
+
+    index_of_taus = torch.unique(g.ndata["tau_label"])
+    if len(index_of_taus)>1:
+        g = dgl.remove_nodes(g, torch.where(g.ndata["tau_label"] == index_of_taus[1])[0])
+        print(g.number_of_nodes())
     if len(g.ndata["label_true"]) < 10:
         graph_empty = True
+    
+    print("torch sum tau label -1", torch.sum(g.ndata["tau_label"] == -1))
     # # print("graph_empty", graph_empty)
+    # if load_p:
+    #     if (y_data_graph.mom_main_daugther.shape[0])>len(torch.unique(g.ndata["tau_label"])):
+    #         graph_empty = True     
 
     return [g, y_data_graph], graph_empty
 
@@ -253,6 +278,7 @@ def graph_batch_func(list_graphs):
         batch dgl: dgl batch of graphs
     """
     list_graphs_g = [el[0] for el in list_graphs]
+    print("batching graphs", len(list_graphs_g))
     # list_y = add_batch_number(list_graphs)
     # ys = torch.cat(list_y, dim=0)
     # ys = torch.reshape(ys, [-1, list_y[0].shape[1]])

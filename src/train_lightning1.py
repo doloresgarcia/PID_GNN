@@ -36,7 +36,9 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 from lightning.pytorch.profilers import AdvancedProfiler
-
+import os
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 # os.environ["TORCH_USE_CUDA_DSA"] = "1"
@@ -77,14 +79,14 @@ def model_setup(args, data_config):
     network_module = import_module(args.network_config, name="_network_module")
     network_options = {k: ast.literal_eval(v) for k, v in args.network_option}
 
-    if args.gpus:
-        gpus = [int(i) for i in args.gpus.split(",")]  # ?
-        dev = torch.device(gpus[0])
-        print("using GPUs:", gpus)
-    else:
-        gpus = None
-        local_rank = 0
-        dev = torch.device("cpu")
+    # if args.gpus:
+    #     gpus = [int(i) for i in args.gpus.split(",")]  # ?
+    #     dev = torch.device(gpus[0])
+    #     print("using GPUs:", gpus)
+    # else:
+    gpus = None
+    local_rank = 0
+    dev = torch.device("cpu")
     model, model_info = network_module.get_model(
         data_config, args=args, dev=dev, **network_options
     )
@@ -126,6 +128,42 @@ def main():
         name=args.wandb_displayname,
         log_model="all",
     )
+
+    if args.export_onnx:
+        print("exporting to onnx")
+        filepath = args.model_prefix + "model_multivector_1_input.onnx"
+        torch._dynamo.config.verbose = True
+        if args.load_model_weights is not None:
+            from src.models.Gatr_pf_e_tau_onnx2 import ExampleWrapper
+
+            model = ExampleWrapper.load_from_checkpoint(
+                args.load_model_weights, args=args, dev=0
+            )
+        model.eval()
+        model.ScaledGooeyBatchNorm2_1.momentum = 0
+        # args1 = torch.randn((10, 7))
+        features_high_level = torch.cat((torch.ones(10,1), torch.zeros(10,3)),dim=1)
+        # args1 = (torch.zeros((10, 3)), torch.zeros((10, 1)), torch.zeros((10, 3)), features_high_level)
+        args1 = torch.randn((10, 3))
+        # export_options = torch.onnx.ExportOptions(dynamic_shapes=True)
+        # onnx_program = torch.onnx.dynamo_export(
+        #     model,  args1, export_options=export_options)
+        torch.onnx.export(model, 
+                        args1,
+                        filepath, 
+                        dynamo=True, 
+                        report=True, 
+                        verify=True,       
+                        input_names=["input"],
+                        output_names=["output"])
+                        # dynamic_axes={
+                        #     "input": [0]}) 
+        #     inputs=torch.zeros((10, 3)), inputs_scalar=torch.zeros((10, 1)), energy_inputs=torch.zeros((10, 3)), feature_high_level=features_high_level, export_options=export_options,
+        # )
+        # onnx_program.save(filepath)
+
+
+
     if training_mode:
         # wandb.init(project=args.wandb_projectname, entity=args.wandb_entity)
         # wandb.run.name = args.wandb_displayname
@@ -137,7 +175,7 @@ def main():
         #     )
 
         if args.load_model_weights is not None:
-            from src.models.Gatr_pf_e_multiclass import (
+            from src.models.Gatr_pf_e_tau import (
                 ExampleWrapper as GravnetModel,
             )
 
@@ -171,7 +209,7 @@ def main():
             logger=wandb_logger,
             max_epochs=args.num_epochs,
             # strategy="ddp",
-            # limit_train_batches=200,
+            # limit_train_batches=512,
             # limit_val_batches=20,
             # strategy="ddp_find_unused_parameters_true"
             # precision=16
@@ -193,10 +231,10 @@ def main():
 
     if args.data_test:
         if args.load_model_weights is not None:
-            from src.models.Gatr_pf_e_tau_rho import ExampleWrapper as GravnetModel
+            from src.models.Gatr_pf_e_tau_onnx2 import ExampleWrapper as GravnetModel
 
             model = GravnetModel.load_from_checkpoint(
-                args.load_model_weights, args=args, dev=0
+                args.load_model_weights, args=args, dev=0, map_location="cuda:3"
             )
         # profiler = AdvancedProfiler(dirpath=".", filename="perf_logs_eval_23042024")
         trainer = L.Trainer(
